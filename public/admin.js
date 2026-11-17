@@ -269,7 +269,7 @@
     const edit = d.can_edit;
     document.getElementById('vt').textContent = p.name;
     document.getElementById('vc').textContent = [p.ref, p.client, p.location, p.sector].filter(Boolean).join(' · ');
-    const tabs = [['overview', 'Overview'], ['updates', `Weekly updates (${d.updates.length})`], ['safety', 'Safety'], ['quality', 'Quality'], ['actions', `Actions (${d.actions.filter(a => a.status === 'open').length})`], ['history', 'History']];
+    const tabs = [['overview', 'Overview'], ['progress', 'Progress'], ['updates', `Weekly updates (${d.updates.length})`], ['safety', 'Safety'], ['quality', 'Quality'], ['actions', `Actions (${d.actions.filter(a => a.status === 'open').length})`], ['history', 'History']];
     const openEsc = d.escalations.filter(e => !e.closed_at);
     let body = '';
     if (tab === 'overview') {
@@ -289,6 +289,8 @@
           ${d.milestones.map(x => { const late = !x.actual_on && (x.forecast_on || x.planned_on) && (x.forecast_on || x.planned_on) < todayIso(); return `<tr><td><b>${esc(x.name)}</b></td><td>${fDate(x.planned_on)}</td><td>${fDate(x.forecast_on)}</td>
             <td>${x.actual_on ? `<span class="pill yes">${fDate(x.actual_on)}</span>` : late ? '<span class="pill overdue">Past its date</span>' : ''}</td><td style="text-align:right">${edit ? `<button class="btn small quiet" data-ms="${x.id}">Edit</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">No milestones set for this project yet.</p>'}
         ${edit ? '<button class="btn small ghost" id="addms">Add milestone</button>' : ''}`;
+    } else if (tab === 'progress') {
+      body = progressTab(p, d);
     } else if (tab === 'updates') {
       body = d.updates.length ? `<div class="tablewrap"><table><thead><tr><th>Week ending</th>${AREAS.map(a => `<th title="${a[1]}">${a[1].slice(0, 4)}</th>`).join('')}<th class="num">Planned</th><th class="num">Actual</th><th class="num">Margin</th><th class="num">Incidents</th><th class="num">Near misses</th><th>From</th></tr></thead><tbody>
         ${d.updates.map((x, i) => { const m = margin(p, x.data); return `<tr class="click" data-u="${i}"><td><b>${fDate(x.week_ending)}</b></td>${AREAS.map(a => `<td>${ragDot((x.rag || {})[a[0]], a[1])}</td>`).join('')}
@@ -308,6 +310,7 @@
       <div class="ragcards">${AREAS.map(([k, l]) => { const a = d.rag[k]; return `<div class="ragcard ${a.s}"><div class="l">${l}</div>${ragPill(a)}${a.why.length ? `<ul>${a.why.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : `<p>${a.s === 'none' ? 'Nothing recorded yet' : 'Nothing flagged'}</p>`}</div>`; }).join('')}</div>
       <div class="tabs no-print">${tabs.map(t => `<button data-tab="${t[0]}" class="${t[0] === tab ? 'on' : ''}">${t[1]}</button>`).join('')}</div>${body}`);
     main().querySelectorAll('[data-tab]').forEach(b => (b.onclick = () => go(`#/projects/${p.id}?tab=${b.dataset.tab}`)));
+    bindProgress();
     const on = (sel, fn) => { const el = document.getElementById(sel); if (el) el.onclick = fn; };
     on('editp', () => projectDialog(p));
     on('escalate', () => escalateDialog(p.id));
@@ -317,6 +320,68 @@
     on('addaction', () => actionDialog(null, p.id));
     bindItems(d.items, edit); bindActions(d.actions);
     main().querySelectorAll('[data-u]').forEach(tr => (tr.onclick = () => updateDetail(p, d.updates[Number(tr.dataset.u)], edit)));
+  }
+
+  // Progress tab: planned against actual, week by week, from the weekly updates.
+  const PLAN_COLOUR = '#2f74b5';
+  const dayNum = iso => Date.parse(iso + 'T12:00:00Z') / 86400000;
+  function progressTab(p, d) {
+    const rows = d.updates.filter(u => isNum(u.data.planned_pct) && isNum(u.data.actual_pct)).slice().reverse();
+    if (!rows.length) return '<div class="panel"><div class="empty"><b>No progress to show yet</b>Planned and actual progress are plotted here from the weekly updates, starting with the first one.</div></div>';
+    const last = rows[rows.length - 1].data, gap = n => Math.round(n * 10) / 10;
+    const W = 760, H = 280, L = 44, R = 118, T = 16, B = 34;
+    const x0 = dayNum(rows[0].week_ending), x1 = dayNum(rows[rows.length - 1].week_ending);
+    const X = iso => (x1 === x0 ? L + (W - L - R) / 2 : L + ((dayNum(iso) - x0) / (x1 - x0)) * (W - L - R));
+    const Y = v => T + (1 - v / 100) * (H - T - B);
+    const path = k => rows.map((u, i) => `${i ? 'L' : 'M'}${X(u.week_ending).toFixed(1)} ${Y(u.data[k]).toFixed(1)}`).join(' ');
+    const dots = (k, colour) => rows.map(u => `<circle cx="${X(u.week_ending).toFixed(1)}" cy="${Y(u.data[k]).toFixed(1)}" r="4" fill="${colour}" stroke="#fff" stroke-width="2"/>`).join('');
+    const step = Math.max(1, Math.ceil(rows.length / 8));
+    const ticks = rows.filter((u, i) => i % step === 0 || i === rows.length - 1).filter((u, i, a) => i === a.length - 1 || X(a[a.length - 1].week_ending) - X(u.week_ending) > 60 || u === a[a.length - 1]);
+    const short = iso => { const [, m, dd] = iso.split('-'); return `${dd} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`; };
+    // End labels sit beside the last point, nudged apart if the two lines finish close together.
+    let yp = Y(last.planned_pct), ya = Y(last.actual_pct);
+    if (Math.abs(yp - ya) < 16) { const mid = (yp + ya) / 2, up = last.planned_pct >= last.actual_pct; yp = mid + (up ? -8 : 8); ya = mid + (up ? 8 : -8); }
+    const xe = X(rows[rows.length - 1].week_ending) + 10;
+    const behind = gap(last.planned_pct - last.actual_pct);
+    return `<div class="panel"><div class="facts" style="margin-bottom:1rem">
+        <div><span class="k">Planned to date</span><div class="v">${last.planned_pct}%</div></div>
+        <div><span class="k">Actual to date</span><div class="v">${last.actual_pct}%</div></div>
+        <div><span class="k">Against plan</span><div class="v">${behind > 0 ? `${behind} point${behind === 1 ? '' : 's'} behind` : behind < 0 ? `${-behind} point${behind === -1 ? '' : 's'} ahead` : 'On plan'}</div></div>
+        <div><span class="k">Planned completion</span><div class="v">${fDate(p.planned_completion) || 'Not set'}</div></div>
+        <div><span class="k">Forecast completion</span><div class="v">${fDate(last.forecast_completion) || 'Not given'}</div></div></div>
+      <div class="legendrow"><span><i style="background:${PLAN_COLOUR}"></i>Planned</span><span><i style="background:var(--oak)"></i>Actual</span></div>
+      <div class="chartwrap" id="pchart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Planned and actual progress by week">
+        ${[0, 25, 50, 75, 100].map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#e7e2d9" stroke-width="1"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end" class="ax">${v}%</text>`).join('')}
+        ${ticks.map(u => `<text x="${X(u.week_ending).toFixed(1)}" y="${H - 10}" text-anchor="middle" class="ax">${short(u.week_ending)}</text>`).join('')}
+        <line id="pcross" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="#9a9388" stroke-width="1" visibility="hidden"/>
+        ${rows.length > 1 ? `<path d="${path('planned_pct')}" fill="none" stroke="${PLAN_COLOUR}" stroke-width="2" stroke-dasharray="6 4" stroke-linejoin="round"/><path d="${path('actual_pct')}" fill="none" stroke="var(--oak)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+        ${dots('planned_pct', PLAN_COLOUR)}${dots('actual_pct', 'var(--oak)')}
+        <text x="${xe}" y="${yp + 4}" class="endl">Planned ${last.planned_pct}%</text><text x="${xe}" y="${ya + 4}" class="endl">Actual ${last.actual_pct}%</text>
+        ${rows.map((u, i) => { const cx = X(u.week_ending), a = i ? (X(rows[i - 1].week_ending) + cx) / 2 : L, b = i < rows.length - 1 ? (cx + X(rows[i + 1].week_ending)) / 2 : W - R; return `<rect x="${a.toFixed(1)}" y="${T}" width="${(b - a).toFixed(1)}" height="${H - T - B}" fill="transparent" data-pt="${i}" data-cx="${cx.toFixed(1)}"/>`; }).join('')}
+      </svg><div class="charttip hidden" id="ptip"></div></div>
+      <script type="application/json" id="pdata">${JSON.stringify(rows.map(u => ({ w: fDate(u.week_ending), p: u.data.planned_pct, a: u.data.actual_pct }))).replace(/</g, '\\u003c')}</script></div>
+      <div class="tablewrap"><table><thead><tr><th>Week ending</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Against plan</th><th class="num">Moved in the week</th><th>Forecast completion</th><th>Delays and recovery</th></tr></thead><tbody>
+        ${rows.slice().reverse().map((u, i, arr) => { const prev = arr[i + 1], g = gap(u.data.planned_pct - u.data.actual_pct), mv = prev ? gap(u.data.actual_pct - prev.data.actual_pct) : null;
+          return `<tr><td><b>${fDate(u.week_ending)}</b></td><td class="num">${u.data.planned_pct}%</td><td class="num">${u.data.actual_pct}%</td><td class="num">${g > 0 ? `${g} behind` : g < 0 ? `${-g} ahead` : 'On plan'}</td>
+            <td class="num">${mv == null ? '' : (mv >= 0 ? '+' : '') + mv}</td><td>${fDate(u.data.forecast_completion)}</td><td>${[u.data.delay, u.data.recovery].filter(Boolean).map(esc).join('<br>')}</td></tr>`; }).join('')}</tbody></table></div>
+      ${d.milestones.length ? `<h2>Key milestones</h2><div class="tablewrap"><table><thead><tr><th>Milestone</th><th>Planned</th><th>Forecast</th><th>Achieved</th></tr></thead><tbody>
+        ${d.milestones.map(x => { const late = !x.actual_on && (x.forecast_on || x.planned_on) && (x.forecast_on || x.planned_on) < todayIso(); return `<tr><td><b>${esc(x.name)}</b></td><td>${fDate(x.planned_on)}</td><td>${fDate(x.forecast_on)}</td>
+          <td>${x.actual_on ? `<span class="pill yes">${fDate(x.actual_on)}</span>` : late ? '<span class="pill overdue">Past its date</span>' : ''}</td></tr>`; }).join('')}</tbody></table></div>` : ''}`;
+  }
+  function bindProgress() {
+    const wrap = document.getElementById('pchart'); if (!wrap) return;
+    const data = JSON.parse(document.getElementById('pdata').textContent), tip = document.getElementById('ptip'), cross = document.getElementById('pcross'), svg = wrap.querySelector('svg');
+    const show = el => {
+      const r = data[Number(el.dataset.pt)], g = Math.round((r.p - r.a) * 10) / 10;
+      cross.setAttribute('x1', el.dataset.cx); cross.setAttribute('x2', el.dataset.cx); cross.setAttribute('visibility', 'visible');
+      tip.innerHTML = `<b>Week ending ${r.w}</b><div><i style="background:${PLAN_COLOUR}"></i>Planned ${r.p}%</div><div><i style="background:var(--oak)"></i>Actual ${r.a}%</div><div class="sub">${g > 0 ? `${g} point${g === 1 ? '' : 's'} behind` : g < 0 ? `${-g} point${g === -1 ? '' : 's'} ahead` : 'On plan'}</div>`;
+      tip.classList.remove('hidden');
+      const px = (Number(el.dataset.cx) / svg.viewBox.baseVal.width) * svg.clientWidth;
+      tip.style.left = Math.min(Math.max(px + 12, 0), wrap.clientWidth - tip.offsetWidth) + 'px';
+    };
+    const hide = () => { tip.classList.add('hidden'); cross.setAttribute('visibility', 'hidden'); };
+    wrap.querySelectorAll('[data-pt]').forEach(el => { el.onmouseenter = () => show(el); el.onclick = () => show(el); });
+    wrap.onmouseleave = hide;
   }
 
   function milestoneDialog(projectId, m) {

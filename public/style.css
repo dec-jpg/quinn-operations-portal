@@ -241,5 +241,14 @@ td.rc { white-space: nowrap; }
 .rep h2 { margin-top: 1.6rem; } .rep .panel { margin-bottom: .8rem; padding: 14px 18px; }
 .rep .panel > b { display: block; } .rep ul { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .9rem; } .rep .quote { margin: .5rem 0 0; font-size: .9rem; white-space: pre-wrap; border-left: 3px solid var(--line); padding-left: .7rem; color: var(--ink-2); }
 .rules td input { width: 90px; }
+/* progress chart */
+.chartwrap { position: relative; }
+.chartwrap svg { width: 100%; height: auto; display: block; }
+.chartwrap .ax { font-size: 11px; fill: #6f685d; font-family: var(--font); }
+.chartwrap .endl { font-size: 12px; font-weight: 600; fill: #17150f; font-family: var(--font); }
+.legendrow { display: flex; gap: 1.2rem; font-size: .82rem; color: var(--ink-2); margin-bottom: .4rem; }
+.legendrow i, .charttip i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+.charttip { position: absolute; top: 8px; background: #fff; border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow); padding: 8px 12px; font-size: .82rem; pointer-events: none; white-space: nowrap; }
+.charttip b { display: block; margin-bottom: 3px; }
 @media (max-width: 1100px) { .ragcards { grid-template-columns: repeat(2, 1fr); } }
 @media print { .rep .panel { break-inside: avoid; border: 1px solid #ddd; } .savebar, .tabs { display: none !important; } .ad-main { padding: 0; max-width: none; } }
