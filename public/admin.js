@@ -412,6 +412,7 @@
   }
 
   // ---------- safety and quality registers ----------
+  const noProjects = what => `<div class="note warn">${what} are recorded against a project, and there are no projects on the register yet. ${isAdmin() ? 'Add the first one in the <a href="#/projects?new=1">Project register</a>, then come back here.' : 'They appear here once a project has been given to you.'}</div>`;
   let itemRows = [];
   function itemsTable(rows, showProject) {
     itemRows = rows;
@@ -436,7 +437,7 @@
     setMain(`<div class="toolbar">${field('Project', select('f_project', [['', 'All projects'], ...ps.map(p => [p.id, p.name])], f.project))}
         ${field('Type', select('f_type', [['', 'All types'], ...TYPES[name].map(t => [t, TYPE[t]])], f.type))}
         ${field('Show', select('f_show', [['open', 'Open only'], ['all', 'Everything, including closed and audits']], f.show))}
-        ${canEdit() && ps.length ? '<button class="btn" id="add" style="margin-left:auto">Add entry</button>' : ''}</div>${itemsTable(rows, true)}`);
+        ${canEdit() && ps.length ? '<button class="btn" id="add" style="margin-left:auto">Add entry</button>' : ''}</div>${ps.length ? '' : noProjects('Register entries')}${itemsTable(rows, true)}`);
     ['project', 'type', 'show'].forEach(k => (document.getElementById('f_' + k).onchange = () => go(`#/${name}?project=${v('f_project')}&type=${v('f_type')}&show=${v('f_show')}`)));
     const add = document.getElementById('add'); if (add) add.onclick = () => itemDialog(null, name, f.project || null);
     bindItems(d.rows, canEdit());
@@ -499,7 +500,7 @@
       <div class="toolbar">${field('Project', select('f_project', [['', 'All projects'], ...ps.map(p => [p.id, p.name])], f.project))}
         ${field('Responsible', select('f_owner', [['', 'Everyone'], ...owners.map(o => [o, o])], f.owner))}
         ${field('Show', select('f_show', [['open', 'Open'], ['overdue', 'Overdue'], ['director', `For ${brand.director}`], ['all', 'Everything, including done']], f.show))}
-        ${canEdit() ? '<button class="btn" id="add" style="margin-left:auto">Add action</button>' : ''}</div>${actionsTable(rows, true)}`);
+        ${canEdit() ? '<button class="btn" id="add" style="margin-left:auto">Add action</button>' : ''}</div>${ps.length ? '' : noProjects('Actions')}${actionsTable(rows, true)}`);
     ['project', 'owner', 'show'].forEach(k => (document.getElementById('f_' + k).onchange = () => go(`#/actions?project=${v('f_project')}&owner=${encodeURIComponent(v('f_owner'))}&show=${v('f_show')}`)));
     const add = document.getElementById('add'); if (add) add.onclick = () => actionDialog(null, f.project || null);
     bindActions(d.rows);
